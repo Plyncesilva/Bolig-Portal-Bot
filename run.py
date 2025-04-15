@@ -196,6 +196,11 @@ if __name__ == "__main__":
     
     credentials = dotenv_values(".env.credentials")
 
+    logging.info("")
+    logging.info("======================================")
+    logging.info("🟢 BEGIN BOLIG PORTAL BOT EXECUTION 🟢")
+    logging.info("======================================")
+    logging.info("")
     logging.info("👀 Logging in to Bolig Portal...")
     login(credentials)
     logging.info("✅ Logged in!")
