@@ -1,0 +1,4 @@
+python-dotenv
+httpx[http2]
+logging
+bs4
