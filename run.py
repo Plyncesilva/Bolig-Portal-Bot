@@ -12,8 +12,6 @@ from datetime import datetime
 
 from constants import *
 
-cookies = dotenv_values(".env.cookies")
-
 headers = {
     "Host": "www.boligportal.dk",
     "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:137.0) Gecko/20100101 Firefox/137.0",
@@ -187,7 +185,7 @@ def send_message(url):
                 json=json_body
             )
             response.raise_for_status()
-            print(f"✅ Sent message to id {json_body.get('ad_id')}")
+            logging.info(f"✅ Sent message to id {json_body.get('ad_id')}")
     
     except httpx.RequestError as e:
         logging.error(f"Error making request: {e}")
