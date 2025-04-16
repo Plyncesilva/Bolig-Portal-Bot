@@ -17,13 +17,10 @@ cookies = dotenv_values(".env.cookies")
 headers = {
     "Host": "www.boligportal.dk",
     "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:137.0) Gecko/20100101 Firefox/137.0",
-    "Cookie": cookies["COOKIES"],
     "Accept": "*/*",
     "Accept-Language": "da",
     "Accept-Encoding": "gzip, deflate, br",
-    "Referer": "https://www.boligportal.dk/login",
     "X-Request-Source": "WEB_FRONTEND",
-    "X-Csrftoken": "KOeHTlFz5ba5JALh7NyI25y2d1StOzAS",
     "Content-Type": "text/plain;charset=UTF-8",
     "Origin": "https://www.boligportal.dk",
     "Sec-Fetch-Dest": "empty",
@@ -63,11 +60,49 @@ def extract_store_json(response_text: str) -> dict:
     except Exception as e:
         raise ValueError(f"❌ Unrecognized error while extracting json data: {e}")
 
+
+def refresh_cloudflare_cookies():
+    url = BASE_URL
+    response = get_request(url)  # Expected to return a `requests.Response` object
+
+    # Extract cookies from the response
+    cookies = response.cookies
+
+    extra_cookies = {
+        '_ga_0H61X0LYSG': 'GS1.1.1744801180.4.1.1744801376.38.0.0',
+        'CookieInformationConsent': '%7B%22website_uuid%22%3A%22f5510035-790d-43f0-94c7-4e49b742a6a4%22%2C%22timestamp%22%3A%222025-04-15T17%3A52%3A25.104Z%22%2C%22consent_url%22%3A%22https%3A%2F%2Fwww.boligportal.dk%2Flogin%22%2C%22consent_website%22%3A%22boligportal.dk%22%2C%22consent_domain%22%3A%22www.boligportal.dk%22%2C%22user_uid%22%3A%226f314d51-c843-4758-9d3b-28033790415d%22%2C%22consents_approved%22%3A%5B%22cookie_cat_necessary%22%2C%22cookie_cat_functional%22%2C%22cookie_cat_statistic%22%2C%22cookie_cat_marketing%22%2C%22cookie_cat_unclassified%22%5D%2C%22consents_denied%22%3A%5B%5D%2C%22user_agent%22%3A%22Mozilla%2F5.0%20%28X11%3B%20Ubuntu%3B%20Linux%20x86_64%3B%20rv%3A137.0%29%20Gecko%2F20100101%20Firefox%2F137.0%22%7D',
+        '_pk_id.2.20f7': '8a86b228e09aa749.1744739545.',
+        'mtm_cookie_consent': '1744801355276',
+        '_gcl_au': '1.1.2105709907.1744739545',
+        '_ga': 'GA1.1.1492258431.1744739547',
+        '_gid': 'GA1.2.198060658.1744741297',
+        '_ga_GCSK2D78ZH': 'GS1.1.1744797766.3.1.1744797931.60.0.0',
+        '_pk_ses.2.20f7': '1',
+        '_uetsid': '47bffbc01a2011f0ab463f59e62affb2',
+        '_uetvid': '8c5f16607f3111efbc351b7893f6abea'
+    }
+
+
+    # Merge extra cookies into the main cookie dict
+    cookies.update(extra_cookies)
+
+    # Build final Cookie header string
+    cookie_header = '; '.join(f"{key}={value}" for key, value in cookies.items())
+    headers['Cookie'] = cookie_header
+
+    # Add X-Csrftoken header if csrftoken is present
+    if 'csrftoken' in cookies:
+        headers['X-Csrftoken'] = cookies['csrftoken']
+
+
+
 def login(credentials: dict):
     """
     credentials of format:
     {"username":"email","password":"password"}
     """
+    refresh_cloudflare_cookies()
+
     url = BASE_URL + LOGIN
     try:
         with httpx.Client(http2=True) as client:  # Or add proxies & verify=False if using Burp
@@ -93,6 +128,9 @@ def login(credentials: dict):
             # Rebuild Cookie header string
             new_cookie_header = "; ".join(f"{k}={v}" for k, v in cookie_dict_combined.items())
             headers["Cookie"] = new_cookie_header
+
+            if 'csrftoken' in cookie_dict_combined:
+                headers['X-Csrftoken'] = cookie_dict_combined['csrftoken']
 
     except httpx.RequestError as e:
         logging.error(f"Error making request, aborting: {e}")
@@ -129,26 +167,28 @@ def get_total_properties():
 
     return extract_store_json(response.text)["props"]["page_props"]["result_count"]
 
-def send_message(ad_id):
+def send_message(url):
     """
     MESSAGE of format:
     {"ad_id":"ad_id","message":"message"}
     """
-    url = BASE_URL + SEND_MESSAGE
+    ad_id = url.split('-')[-1]
+    api_send_message = BASE_URL + SEND_MESSAGE
     env = dotenv_values(".env")
-    json_body = { "ad_id": ad_id, "message": env["LANDLORD_MESSAGE"] }
+    json_body = { "ad_id": eval(ad_id), "body": env["LANDLORD_MESSAGE"] }
+
+    headers["Referer"] = BASE_URL + url
 
     try:
-        with httpx.Client(http2=True) as client:  # Or add proxies & verify=False if using Burp
+        with httpx.Client( http2=True) as client:
             response = client.post(
-                url,
+                api_send_message,
                 headers=headers,
                 json=json_body
             )
             response.raise_for_status()
-
-            print(f"✅ Sent message to id {ad_id}")
-
+            print(f"✅ Sent message to id {json_body.get('ad_id')}")
+    
     except httpx.RequestError as e:
         logging.error(f"Error making request: {e}")
     except Exception as e:
@@ -161,8 +201,7 @@ def record_processed_property(url):
 def process_properties(urls: list):
     for url in urls:
         logging.info(f"➡️ Processing new property: {url} ...")
-        ad_id = url.split('-')[-1]
-        # send_message(ad_id)
+        send_message(url)
         record_processed_property(url)
         logging.info(f"🟢 Done!")
         random_seconds = random.randint(60, 60 * 5)
