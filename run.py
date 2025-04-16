@@ -224,6 +224,8 @@ if __name__ == "__main__":
 
                 logging.info(f"😑 Nothing new yet... Will take a nap for {random_seconds} seconds 💤")
                 time.sleep(random_seconds)
+    except KeyboardInterrupt:
+        logging.info(f"🔴 PROGRAM INTERRUPTED! Exiting...")
 
     except Exception as e:
         logging.error(f"Error: {e}")
