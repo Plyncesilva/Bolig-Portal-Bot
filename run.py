@@ -253,7 +253,8 @@ if __name__ == "__main__":
                 process_properties(new_urls)
                 logging.info(f"✅ Successfully processed {len(new_urls)} new properties!")
             else:
-                if 0 <= datetime.now().hour < 6:
+                hour = datetime.now().hour
+                if 22 <= hour or hour < 4:
                     # Between midnight and 6 AM: 1 to 2 hours
                     random_seconds = random.randint(60 * 60, 60 * 60 * 2)
                 else:
