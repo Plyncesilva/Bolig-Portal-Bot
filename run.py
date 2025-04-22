@@ -99,6 +99,8 @@ def login(credentials: dict):
     credentials of format:
     {"username":"email","password":"password"}
     """
+    logging.info("👀 Logging in to Bolig Portal...")
+
     refresh_cloudflare_cookies()
 
     url = BASE_URL + LOGIN
@@ -136,6 +138,8 @@ def login(credentials: dict):
     except Exception as e:
         logging.error(f"Error processing data, aborting: {e}")
         exit(0)
+    
+    logging.info("✅ Logged in!")
 
 def get_request(url):
     try:
@@ -202,7 +206,7 @@ def process_properties(urls: list):
         send_message(url)
         record_processed_property(url)
         logging.info(f"🟢 Done!")
-        random_seconds = random.randint(60, 60 * 5)
+        random_seconds = random.randint(60 * 5, 60 * 20) # wait between 5 and 20 minutes before sending a message
         logging.info(f"💤 Sleeping for {random_seconds} seconds before the next property...")
         time.sleep(random_seconds)
 
@@ -238,10 +242,9 @@ if __name__ == "__main__":
     logging.info("🟢 BEGIN BOLIG PORTAL BOT EXECUTION 🟢")
     logging.info("======================================")
     logging.info("")
-    logging.info("👀 Logging in to Bolig Portal...")
-    login(credentials)
-    logging.info("✅ Logged in!")
 
+    login(credentials)
+    
     logging.info("")
     logging.info("➰ Initializing main loop...")
     try:
@@ -255,10 +258,33 @@ if __name__ == "__main__":
             else:
                 hour = datetime.now().hour
                 if 22 <= hour or hour < 4:
-                    # Between midnight and 6 AM: 1 to 2 hours
-                    random_seconds = random.randint(60 * 60, 60 * 60 * 2)
+                    logging.info("Night night baby, see you tomorrow at 4 AM... 💤💤💤")
+                    # wait the exact amount until 4AM (= 6AM in copenhagen)
+                    minute = datetime.now().minute
+
+                    until_next_hour = (60 - minute) * 60
+                    hour += 1
+
+                    until_four = 0
+
+                    if 22 <= hour < 24:
+                        until_four += 24 - hour + 4
+                    elif 0 <= hour < 4:
+                        until_four += 4 - hour
+                    else:
+                        # error case
+                        logging.error("Impossible branch reached")
+                        pass
+
+                    time.sleep(until_next_hour + 60 * until_four) # sleep until 4 AM
+
+                    logging.info("Good morninggggggg, rise & shine baby, rise & shine 😎")
+                    login(credentials)
+
+                    random_seconds = 0 # dirty hack
+
                 else:
-                    random_seconds = random.randint(60, 5 * 60)
+                    random_seconds = random.randint(60, 5 * 60) # wait between 1 and 5 minutes before checking more houses
 
                 logging.info(f"😑 Nothing new yet... Will take a nap for {random_seconds} seconds 💤")
                 time.sleep(random_seconds)
