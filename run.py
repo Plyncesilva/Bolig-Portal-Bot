@@ -28,6 +28,16 @@ headers = {
     "Te": "trailers"
 }
 
+import sys
+
+areas = {
+        "osterbro": "/en/rental-apartments,rental-houses,rental-townhouse/all-cities/all-rooms/?max_monthly_rent=14000&zoom=13.335238619157435&center=12.593388516164737%2C55.69987525757085&min_lat=55.68706792441779&min_lng=12.549914819153656&max_lat=55.71267839537427&max_lng=12.636862213176784",
+        "frederiksberg": "/en/rental-apartments,rental-houses,rental-townhouse/all-cities/all-rooms/?max_monthly_rent=14000&zoom=13.335238619157435&center=12.569100394086604%2C55.67690343223944&min_lat=55.66408857325047&min_lng=12.525626697074358&max_lat=55.68971409456097&max_lng=12.612574091097429"
+    }
+
+
+PROPERTIES = areas[sys.argv[1]]
+
 def setup_logging():
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
@@ -36,7 +46,7 @@ def setup_logging():
         filename='bolig_bot.log',  # Or any path you want
         filemode='a',                       # Append mode
         level=logging.INFO,                 # Or DEBUG, WARNING, etc.
-        format='%(asctime)s - %(levelname)s - %(message)s'
+        format=f'%(asctime)s - %(levelname)s - {sys.argv[1]} - %(message)s'
     )
 
 def extract_store_json(response_text: str) -> dict:
@@ -94,16 +104,18 @@ def refresh_cloudflare_cookies():
 
 
 
-def login(credentials: dict):
+def login():
     """
     credentials of format:
     {"username":"email","password":"password"}
     """
     logging.info("👀 Logging in to Bolig Portal...")
+    credentials = dotenv_values(".env.credentials")
 
     refresh_cloudflare_cookies()
 
     url = BASE_URL + LOGIN
+    
     try:
         with httpx.Client(http2=True) as client:  # Or add proxies & verify=False if using Burp
             response = client.post(
@@ -141,19 +153,22 @@ def login(credentials: dict):
     
     logging.info("✅ Logged in!")
 
-def get_request(url):
+def get_request(url, tries=3):
     try:
         with httpx.Client(http2=True) as client:
             response = client.get(
                 url,
                 headers=headers
-            )
+        )
             response.raise_for_status()
 
             return response
 
     except httpx.RequestError as e:
-        logging.error(f"Error making request: {e}")
+        logging.error(f"Error making request: {e}\nRetrying with new login session")
+        if tries > 0:
+            login()
+            get_request(url, tries - 1)
     except Exception as e:
         logging.error(f"Error processing data: {e}")
 
@@ -201,14 +216,17 @@ def record_processed_property(url):
         file.write(url + "\n")
 
 def process_properties(urls: list):
+    random_seconds = random.randint(60 * 5, 60 * 20) # wait between 5 and 20 minutes before sending a message
+    logging.info(f"💤 Sleeping for {random_seconds} seconds before processing the new properties...")
+    time.sleep(random_seconds)
     for url in urls:
         logging.info(f"➡️ Processing new property: {url} ...")
         send_message(url)
         record_processed_property(url)
         logging.info(f"🟢 Done!")
-        random_seconds = random.randint(60 * 5, 60 * 20) # wait between 5 and 20 minutes before sending a message
-        logging.info(f"💤 Sleeping for {random_seconds} seconds before the next property...")
-        time.sleep(random_seconds)
+        logging.info(f"💤 Sleeping for 60 seconds before processing the next property...")
+        time.sleep(60)
+
 
 def get_all_properties_urls():
     urls = []
@@ -235,15 +253,15 @@ def filter_new_urls(urls: list):
 if __name__ == "__main__":
     setup_logging()
     
-    credentials = dotenv_values(".env.credentials")
+    logging.info(f"Running bot for properties in {sys.argv[1]}...")
 
     logging.info("")
     logging.info("======================================")
     logging.info("🟢 BEGIN BOLIG PORTAL BOT EXECUTION 🟢")
     logging.info("======================================")
     logging.info("")
-
-    login(credentials)
+   
+    login()
     
     logging.info("")
     logging.info("➰ Initializing main loop...")
@@ -259,27 +277,13 @@ if __name__ == "__main__":
                 hour = datetime.now().hour
                 if 22 <= hour or hour < 4:
                     logging.info("Night night baby, see you tomorrow at 4 AM... 💤💤💤")
-                    # wait the exact amount until 4AM (= 6AM in copenhagen)
-                    minute = datetime.now().minute
-
-                    until_next_hour = (60 - minute) * 60
-                    hour += 1
-
-                    until_four = 0
-
-                    if 22 <= hour < 24:
-                        until_four += 24 - hour + 4
-                    elif 0 <= hour < 4:
-                        until_four += 4 - hour
-                    else:
-                        # error case
-                        logging.error("Impossible branch reached")
-                        pass
-
-                    time.sleep(until_next_hour + 60 * until_four) # sleep until 4 AM
+                    # wait until 4 AM to restart
+                    while 22 <= hour or hour < 4:
+                        time.sleep(60 * 60) # just sleep 1 hour before re-checking...
+                        hour = datetime.now().hour
 
                     logging.info("Good morninggggggg, rise & shine baby, rise & shine 😎")
-                    login(credentials)
+                    login()
 
                     random_seconds = 0 # dirty hack
 
