@@ -215,6 +215,32 @@ def record_processed_property(url):
     with open(PROCESSED_URLS_FILE_NAME, "a") as file:
         file.write(url + "\n")
 
+def is_locked(url):
+    try:
+        with open(LOCKED_URLS_FILE_NAME, "r") as file:
+            locked_urls = list(line.strip() for line in file)
+            logging.info(f"Property {url} is locked? {url in locked_urls}")
+            return url in locked_urls    
+    except FileNotFoundError:
+        return False
+
+def unlock_properties(urls):
+    logging.info(f"Unlocking {len(urls)} urls:\n{urls}")
+    with open(LOCKED_URLS_FILE_NAME, "r") as file:
+        locked_urls = file.readlines()
+    locked_urls = [url.strip() for url in locked_urls]
+    still_locked_urls = [url for url in locked_urls if url not in urls]
+
+    with open(LOCKED_URLS_FILE_NAME, "w") as file:
+        for url in still_locked_urls:
+            file.write(url + "\n")
+
+def lock_properties(urls):
+    logging.info(f"Locking {len(urls)} properties for processing:\n{urls}")
+    with open(LOCKED_URLS_FILE_NAME, "w") as file:
+        for url in urls:
+            file.write(url + "\n")
+
 def process_properties(urls: list):
     random_seconds = random.randint(60 * 5, 60 * 20) # wait between 5 and 20 minutes before sending a message
     logging.info(f"💤 Sleeping for {random_seconds} seconds before processing the new properties...")
@@ -271,7 +297,13 @@ if __name__ == "__main__":
             new_urls = filter_new_urls(urls)
             if new_urls != []:
                 logging.info(f"🏘️ Found {len(new_urls)} new properties! 💬 Writing to the landlords...")
+                
+                new_urls = [url for url in new_urls if not is_locked(url) ]
+
+                lock_properties(new_urls)
                 process_properties(new_urls)
+                unlock_properties(new_urls)
+                
                 logging.info(f"✅ Successfully processed {len(new_urls)} new properties!")
             else:
                 hour = datetime.now().hour
