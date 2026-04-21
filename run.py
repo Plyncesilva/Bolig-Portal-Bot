@@ -31,8 +31,9 @@ headers = {
 import sys
 
 areas = {
-        "osterbro": "/en/rental-apartments,rental-houses,rental-townhouse/all-cities/all-rooms/?max_monthly_rent=14000&zoom=13.335238619157435&center=12.593388516164737%2C55.69987525757085&min_lat=55.68706792441779&min_lng=12.549914819153656&max_lat=55.71267839537427&max_lng=12.636862213176784",
-        "frederiksberg": "/en/rental-apartments,rental-houses,rental-townhouse/all-cities/all-rooms/?max_monthly_rent=14000&zoom=13.335238619157435&center=12.569100394086604%2C55.67690343223944&min_lat=55.66408857325047&min_lng=12.525626697074358&max_lat=55.68971409456097&max_lng=12.612574091097429"
+        "hvidovre": "/en/rental-properties/all-cities/all-rooms/?view=map&zoom=12.714565449776341&center=12.470307500000558%2C55.6413399583918&min_lat=55.61588629056044&min_lng=12.385836139584455&max_lat=55.666777096751446&max_lng=12.55477886041811&max_monthly_rent=6500",
+        "frederiksberg": "/en/rental-properties/k%C3%B8benhavn/all-rooms/frederiksberg/?max_monthly_rent=6500",
+        "rodovre": "/en/rental-properties/all-cities/all-rooms/?view=map&zoom=12.739417128000348&center=12.453263500001412%2C55.687121735786945&min_lat=55.66213215860603&min_lng=12.37023477134997&max_lat=55.71209535322865&max_lng=12.536292228653423&max_monthly_rent=6500"
     }
 
 
@@ -69,6 +70,15 @@ def extract_store_json(response_text: str) -> dict:
         raise ValueError(f"❌ Unrecognized error while extracting json data: {e}")
 
 
+def get_cookies():
+    # open json file cookies.json
+    result = {}
+    with open("cookies.json", "r") as file:
+        cookies = json.load(file)
+        for c in cookies:
+            result[c["name"]] = c["value"]
+    return result
+
 def refresh_cloudflare_cookies():
     url = BASE_URL
     response = get_request(url)  # Expected to return a `requests.Response` object
@@ -76,20 +86,12 @@ def refresh_cloudflare_cookies():
     # Extract cookies from the response
     cookies = response.cookies
 
-    extra_cookies = {
-        '_ga_0H61X0LYSG': 'GS1.1.1744801180.4.1.1744801376.38.0.0',
-        'CookieInformationConsent': '%7B%22website_uuid%22%3A%22f5510035-790d-43f0-94c7-4e49b742a6a4%22%2C%22timestamp%22%3A%222025-04-15T17%3A52%3A25.104Z%22%2C%22consent_url%22%3A%22https%3A%2F%2Fwww.boligportal.dk%2Flogin%22%2C%22consent_website%22%3A%22boligportal.dk%22%2C%22consent_domain%22%3A%22www.boligportal.dk%22%2C%22user_uid%22%3A%226f314d51-c843-4758-9d3b-28033790415d%22%2C%22consents_approved%22%3A%5B%22cookie_cat_necessary%22%2C%22cookie_cat_functional%22%2C%22cookie_cat_statistic%22%2C%22cookie_cat_marketing%22%2C%22cookie_cat_unclassified%22%5D%2C%22consents_denied%22%3A%5B%5D%2C%22user_agent%22%3A%22Mozilla%2F5.0%20%28X11%3B%20Ubuntu%3B%20Linux%20x86_64%3B%20rv%3A137.0%29%20Gecko%2F20100101%20Firefox%2F137.0%22%7D',
-        '_pk_id.2.20f7': '8a86b228e09aa749.1744739545.',
-        'mtm_cookie_consent': '1744801355276',
-        '_gcl_au': '1.1.2105709907.1744739545',
-        '_ga': 'GA1.1.1492258431.1744739547',
-        '_gid': 'GA1.2.198060658.1744741297',
-        '_ga_GCSK2D78ZH': 'GS1.1.1744797766.3.1.1744797931.60.0.0',
-        '_pk_ses.2.20f7': '1',
-        '_uetsid': '47bffbc01a2011f0ab463f59e62affb2',
-        '_uetvid': '8c5f16607f3111efbc351b7893f6abea'
-    }
+    extra_cookies = get_cookies()
 
+    # remove the cookies that are already present in the response cookies
+    for key in list(cookies.keys()):
+        if key in extra_cookies:
+            del extra_cookies[key]
 
     # Merge extra cookies into the main cookie dict
     cookies.update(extra_cookies)
@@ -184,6 +186,8 @@ def get_total_properties():
 
     return extract_store_json(response.text)["props"]["page_props"]["result_count"]
 
+TESTING = False
+
 def send_message(url):
     """
     MESSAGE of format:
@@ -195,6 +199,11 @@ def send_message(url):
     json_body = { "ad_id": eval(ad_id), "body": env["LANDLORD_MESSAGE"] }
 
     headers["Referer"] = BASE_URL + url
+
+    if TESTING:
+        logging.info(f"✅ (TESTING) Sent message to id {json_body.get('ad_id')}")
+        logging.info(f"Message content:\n{json_body.get('body')}")
+        return
 
     try:
         with httpx.Client( http2=True) as client:
@@ -237,20 +246,24 @@ def unlock_properties(urls):
 
 def lock_properties(urls):
     logging.info(f"Locking {len(urls)} properties for processing:\n{urls}")
-    with open(LOCKED_URLS_FILE_NAME, "w") as file:
+    with open(LOCKED_URLS_FILE_NAME, "a") as file:
         for url in urls:
             file.write(url + "\n")
 
 def process_properties(urls: list):
-    random_seconds = random.randint(60 * 5, 60 * 20) # wait between 5 and 20 minutes before sending a message
+    random_seconds = random.randint(60 * 20, 60 * 40) # wait between 20 and 40 minutes before sending a message to new ads
     logging.info(f"💤 Sleeping for {random_seconds} seconds before processing the new properties...")
-    time.sleep(random_seconds)
+    if TESTING:
+        random_seconds = 0
+    time.sleep(0) # change after processing initial batch
     for url in urls:
         logging.info(f"➡️ Processing new property: {url} ...")
         send_message(url)
         record_processed_property(url)
         logging.info(f"🟢 Done!")
         logging.info(f"💤 Sleeping for 60 seconds before processing the next property...")
+        if TESTING:
+            continue
         time.sleep(60)
 
 
@@ -277,6 +290,7 @@ def filter_new_urls(urls: list):
     return [url for url in urls if url not in processed_urls]
 
 if __name__ == "__main__":
+    print(f"🟢 Starting Bolig Portal Bot for area: {sys.argv[1]}")
     setup_logging()
     
     logging.info(f"Running bot for properties in {sys.argv[1]}...")
